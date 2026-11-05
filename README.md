@@ -9,7 +9,7 @@ A mod for the [FH2 Mod Platform](https://github.com/Trinculo54/fh2-mod-platform)
 - **Send:** hold LB and press a d-pad direction. While LB is held, the d-pad is quick chat's: the radio doesn't change station and telemetry doesn't open.
 - **Defaults:** Up "Hello!", Right "Thanks!", Down "Sorry!", Left "Nice race!".
 - **One message every 1.5 seconds** at most.
-- **Offline**, your own messages still pop up, so you can try the buttons.
+- **Offline**, your own messages still show, so you can try the buttons.
 
 ## Settings
 
