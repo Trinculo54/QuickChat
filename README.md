@@ -1,8 +1,8 @@
 # QuickChat
 
-Quick chat for Forza Horizon 2 online: hold **LB** and press the **d-pad** to send a short phrase to the other players, like "Thanks!" or "Nice race!". Messages pop up as the game's own HUD notification, yours as "You" and theirs with their gamertag.
+Quick chat for Forza Horizon 2 online: hold **LB** and press the **d-pad** to send a short phrase to the other players, like "Thanks!" or "Nice race!". Messages show as a chat log at the left of the screen, over the minimap: yours as "You", theirs with their gamertag. On a platform without the HUD feed (before 2.9.0) they pop up as the game's own HUD notification instead.
 
-A mod for the [FH2 Mod Platform](https://github.com/Trinculo54/fh2-mod-platform). Work in progress: it needs the platform's pad layer preview, and an online mod to carry the messages.
+A mod for the [FH2 Mod Platform](https://github.com/Trinculo54/fh2-mod-platform) 2.9.0, for its pad layer and HUD feed. Work in progress: it needs an online mod to carry the messages.
 
 ## Using it
 

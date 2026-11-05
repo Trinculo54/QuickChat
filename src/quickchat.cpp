@@ -9,11 +9,14 @@
 // The buttons come from the platform's pad layer preview (FH2Platform.PadLayer, fh2mod_pad.h): while the
 // modifier is held, the game doesn't see the d-pad, so the radio and telemetry don't react.
 //
-// The pop-ups use the same game calls as Achievements: the HUD's minor notification components are
-// tracked through their constructor and destructor (game+0x73E0B1, game+0x73F046), and on the game
-// thread's AchievementsModule tick (game+0x3FCD84) MakeDisplayString (game+0x323310) and ShowNotif
-// (game+0x755330) show one, both byte-checked first.
+// Messages go to the platform's HUD feed (FH2Platform.HudLayer version 2, platform 2.9.0): a few lines at
+// the left over the minimap, like a chat log. On a platform without it they fall back to pop-ups, with the
+// same game calls as Achievements: the HUD's minor notification components are tracked through their
+// constructor and destructor (game+0x73E0B1, game+0x73F046), and on the game thread's AchievementsModule
+// tick (game+0x3FCD84) MakeDisplayString (game+0x323310) and ShowNotif (game+0x755330) show one, both
+// byte-checked first.
 #include "fh2mod.h"
+#include "fh2mod_hud.h"
 #include "fh2mod_pad.h"
 #include "qc_core.hpp"
 #include "quickchat.h"
@@ -44,6 +47,7 @@ const uint8_t kShowNotifBytes[] = {0x4C, 0x89, 0x4C, 0x24, 0x20, 0x4C, 0x89, 0x4
 const FH2ModApi* g_api       = nullptr;
 FH2Mod* g_mod                = nullptr;
 const FH2PadInterface* g_pad = nullptr;
+const FH2HudInterface* g_hud = nullptr;   // the feed; null: pop-ups
 uint8_t* g_base              = nullptr;
 std::wstring g_ini;
 
@@ -111,7 +115,16 @@ Inbox g_in;
 PopupQueue g_pop;
 std::atomic<bool> g_told_offline{false};
 
-void queue_popup(const std::string& who, const std::string& text) {
+// A message on screen: a feed line, or a pop-up when there's no feed.
+void show_message(const std::string& who, const std::string& text) {
+    if (g_hud) {
+        FH2HudFeedLine l{};
+        l.size  = sizeof l;
+        l.name  = who.c_str();
+        l.text  = text.c_str();
+        l.style = FH2_HUD_FEED_GREEN;
+        if (g_hud->post_hud_feed(g_mod, &l)) return;
+    }
     std::lock_guard<std::mutex> lk(g_mu);
     g_pop.push({who, text, GetTickCount64()});
 }
@@ -135,7 +148,7 @@ void on_press(void*, const char*, uint32_t button) {
         seq  = g_out.seq;
     }
     if (!sent) return;   // too soon after the last one
-    queue_popup("You", kPhrases[p]);
+    show_message("You", kPhrases[p]);
     log("sent " + std::to_string(seq) + ": " + kPhrases[p] + " (" + kDirNames[d] + ")");
     if (!(g_api->api_version >= 9 && g_api->playing_online && g_api->playing_online()) && !g_told_offline.exchange(true))
         log("not playing online: your messages only show on your own screen");
@@ -161,7 +174,7 @@ int bridge_deliver(uint32_t from, const char* name, uint32_t seq, uint32_t p) {
     const std::string who = clean_name(name);
     log("from " + who + ": " + kPhrases[p]);
     if (!g_on || !g_others) return 0;
-    queue_popup(who, kPhrases[p]);
+    show_message(who, kPhrases[p]);
     return 1;
 }
 
@@ -272,6 +285,8 @@ DWORD WINAPI worker(LPVOID) {
         log("the game's code never became ready: no pop-ups");
         return 0;
     }
+    // the pop-ups are the feed's fallback too: if the HUD layer is off this session, a post fails and the
+    // message pops up instead
     FH2Hook* ctor = hook("HUDMinorNotificationComponent constructor (QuickChat)", RVA_NOTIF_CTOR, &on_notif_ctor);
     FH2Hook* dtor = hook("HUDMinorNotificationComponent destructor (QuickChat)", RVA_NOTIF_DTOR, &on_notif_dtor);
     FH2Hook* tick = hook("AchievementsModule update (QuickChat pop-ups)", RVA_TICK, &on_tick);
@@ -286,7 +301,7 @@ DWORD WINAPI worker(LPVOID) {
             if (h) g_api->disable_hooks(g_mod, h);
         log("the HUD notification hooks aren't all in: no pop-ups (messages are still sent)");
     } else {
-        log("pop-ups are on");
+        log(g_hud ? "messages go to the HUD feed, over the minimap; pop-ups if it's off" : "pop-ups are on");
     }
     return 0;
 }
@@ -384,6 +399,21 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     load_settings();
     add_rows(api);
     api->publish_interface(g_mod, QUICKCHAT_BRIDGE, QUICKCHAT_BRIDGE_VERSION, &g_bridge);
+
+    // the HUD feed (platform 2.9.0): a layer with only the feed, which never takes the screen
+    g_hud = static_cast<const FH2HudInterface*>(api->get_interface(FH2_HUD_INTERFACE, 2));
+    if (g_hud && (g_hud->size < sizeof(FH2HudInterface) || g_hud->version < 2)) g_hud = nullptr;
+    if (g_hud) {
+        FH2HudLayer layer{};
+        layer.size  = sizeof layer;
+        layer.parts = FH2_HUD_PART_FEED;
+        if (!g_hud->add_hud_layer(g_mod, &layer)) {
+            g_hud = nullptr;
+            log("the HUD feed was refused (the line above says why): messages show as pop-ups");
+        }
+    } else {
+        log("this platform has no HUD feed: messages show as pop-ups");
+    }
 
     g_pad = static_cast<const FH2PadInterface*>(api->get_interface(FH2_PAD_INTERFACE, 1));
     if (!g_pad) {

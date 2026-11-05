@@ -1,4 +1,4 @@
 [submodule "platform"]
 	path = platform
 	url = https://github.com/Trinculo54/fh2-mod-platform.git
-	branch = feature/pad-layer-preview
+	branch = dev/2.9.0
