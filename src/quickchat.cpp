@@ -352,7 +352,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     info.size             = sizeof info;
     info.name             = "QuickChat";
     info.version          = QC_VERSION;
-    info.platform_version = FH2MOD_PLATFORM_VERSION;
+    info.platform_version = "2.6.0";   // what it needs: instruction hooks. The HUD feed (2.9.0) is used when it's there
     info.check_updates    = 0;   // no GitHub releases yet
     if (api->api_version >= 6) info.description = "Quick phrases for the other players online, from a Quick Chat list in ANNA's menu.";
     g_mod = api->register_mod(&info);
