@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 # Bump VERSION before tagging a release (the tag build checks they match).
-project(quickchat VERSION 0.1.0 LANGUAGES C CXX RC)
+project(quickchat VERSION 0.2.0 LANGUAGES C CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,7 +22,7 @@ else()
 endif()
 
 # The FH2 Mod Platform (git submodule): d3dcompiler_47.dll and DWrite.dll
-# (the same file), shipped next to azimuth.exe, fh2mod.h and fh2mod_pad.h.
+# (the same file), shipped next to azimuth.exe, fh2mod.h and fh2mod_hud.h.
 add_subdirectory(platform)
 configure_file(cmake/version.h.in ${CMAKE_BINARY_DIR}/generated/fh2_version.h)
 

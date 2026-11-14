@@ -23,7 +23,17 @@ int main() {
     bool short_enough = true;
     for (uint32_t i = 0; i < kPhraseCount; ++i) short_enough = short_enough && std::strlen(kPhrases[i]) <= 16;
     check(short_enough, "every phrase fits the notification's line (16 characters at most)");
-    for (int d = 0; d < kDirs; ++d) check(kDefaultPhrase[d] < kPhraseCount, "default phrases exist");
+    // ANNA's list: every phrase once, Hello! first
+    {
+        unsigned seen = 0;
+        bool once     = true;
+        for (uint32_t p : kMenuOrder) {
+            once = once && p < kPhraseCount && !(seen & (1u << p));
+            if (p < kPhraseCount) seen |= 1u << p;
+        }
+        check(once && seen == (1u << kPhraseCount) - 1, "the list has every phrase exactly once");
+        check(kMenuOrder[0] == 12, "Hello! is first in the list");
+    }
 
     // sending: one message per press, not faster than the cooldown
     {

@@ -34,10 +34,16 @@ constexpr uint32_t kPhraseCount = sizeof kPhrases / sizeof *kPhrases;
 
 inline const char* phrase(uint32_t i) { return i < kPhraseCount ? kPhrases[i] : nullptr; }
 
-// The four d-pad directions, in the order of the settings rows.
-enum Dir { Up, Right, Down, Left, kDirs };
-constexpr const char* kDirNames[kDirs] = {"Up", "Right", "Down", "Left"};
-constexpr uint32_t kDefaultPhrase[kDirs] = {12, 2, 3, 0};   // Hello!, Thanks!, Sorry!, Nice race!
+// The order the phrases have in ANNA's Quick Chat list: the ones said most first, so they're a press or two away.
+// Every phrase is in it once; a new phrase needs a place here too.
+constexpr uint32_t kMenuOrder[] = {
+    12, 2, 3, 0,   // Hello!, Thanks!, Sorry!, Nice race!
+    1, 8, 9,       // Good game, Nice car!, Nice drift!
+    4, 5, 11,      // Follow me, Wait up, On my way
+    6, 7, 10,      // Race?, Let's cruise, Watch out!
+    14, 15, 13,    // Yes, No, Bye!
+};
+static_assert(sizeof kMenuOrder / sizeof *kMenuOrder == kPhraseCount, "every phrase has a place in the list");
 
 // ---- sending ----------------------------------------------------------------------------------
 

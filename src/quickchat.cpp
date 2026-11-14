@@ -1,13 +1,14 @@
-// QuickChat: hold a button (LB) and press the d-pad to send a short phrase to the other players in
-// an online session ("Thanks!", "Nice race!"). The messages show as the game's own HUD notification,
-// yours as "You", theirs with their gamertag.
+// QuickChat: pick a short phrase from ANNA's menu to send to the other players in an online session
+// ("Thanks!", "Nice race!"). The messages show on the HUD, yours as "You", theirs with their gamertag.
 //
 // QuickChat sends nothing over the network itself: it publishes QuickChat.Bridge (include/quickchat.h)
 // for the online mod to carry the messages, and only a phrase number ever crosses. Offline, or without
 // that mod, your own messages still show on your screen.
 //
-// The buttons come from the platform's pad layer preview (FH2Platform.PadLayer, fh2mod_pad.h): while the
-// modifier is held, the game doesn't see the d-pad, so the radio and telemetry don't react.
+// The phrases are a list of QuickChat's in FH2 ANNA's menu (its interface, include/fh2anna.h): D-pad down
+// opens ANNA, Quick Chat is in its top list. ANNA has the d-pad while it's open, so nothing else reacts,
+// and with ANNA's voice commands on a phrase can be said. Without FH2 ANNA there's no way to send, and
+// other players' messages still show.
 //
 // Messages go to the platform's HUD feed (FH2Platform.HudLayer version 2, platform 2.9.0): a few lines at
 // the left over the minimap, like a chat log. On a platform without it they fall back to pop-ups, with the
@@ -15,9 +16,9 @@
 // constructor and destructor (game+0x73E0B1, game+0x73F046), and on the game thread's AchievementsModule
 // tick (game+0x3FCD84) MakeDisplayString (game+0x323310) and ShowNotif (game+0x755330) show one, both
 // byte-checked first.
+#include "fh2anna.h"
 #include "fh2mod.h"
 #include "fh2mod_hud.h"
-#include "fh2mod_pad.h"
 #include "qc_core.hpp"
 #include "quickchat.h"
 
@@ -25,6 +26,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -46,20 +48,13 @@ const uint8_t kShowNotifBytes[] = {0x4C, 0x89, 0x4C, 0x24, 0x20, 0x4C, 0x89, 0x4
 
 const FH2ModApi* g_api       = nullptr;
 FH2Mod* g_mod                = nullptr;
-const FH2PadInterface* g_pad = nullptr;
 const FH2HudInterface* g_hud = nullptr;   // the feed; null: pop-ups
 uint8_t* g_base              = nullptr;
 std::wstring g_ini;
 
 // ---- settings: fh2-mods\QuickChat.ini ----------------------------------------------------------
 
-const char* const kModifierNames[] = {"LB", "RB", "View", "Off"};
-const uint32_t kModifierBits[]     = {FH2_PAD_LB, FH2_PAD_RB, FH2_PAD_BACK, 0};
-constexpr int kModifiers           = 4;
-
 std::atomic<bool> g_on{true}, g_others{true};
-std::atomic<int> g_modifier{0};
-std::atomic<uint32_t> g_dir_phrase[kDirs];
 
 void log(const std::string& s) {
     if (g_api && g_mod) g_api->log(g_mod, s.c_str());
@@ -68,34 +63,17 @@ void log(const std::string& s) {
 int ini_int(const wchar_t* key, int def) { return static_cast<int>(GetPrivateProfileIntW(L"QuickChat", key, def, g_ini.c_str())); }
 void ini_set(const wchar_t* key, int v) { WritePrivateProfileStringW(L"QuickChat", key, std::to_wstring(v).c_str(), g_ini.c_str()); }
 
-const wchar_t* dir_key(int d) {
-    static const wchar_t* const k[kDirs] = {L"Up", L"Right", L"Down", L"Left"};
-    return k[d];
-}
-
 void load_settings() {
-    g_on       = ini_int(L"Enabled", 1) != 0;
-    g_others   = ini_int(L"ShowOthers", 1) != 0;
-    g_modifier = std::clamp(ini_int(L"Button", 0), 0, kModifiers - 1);
-    for (int d = 0; d < kDirs; ++d) {
-        const int p = ini_int(dir_key(d), static_cast<int>(kDefaultPhrase[d]));
-        g_dir_phrase[d] = p >= 0 && static_cast<uint32_t>(p) < kPhraseCount ? static_cast<uint32_t>(p) : kDefaultPhrase[d];
-    }
+    g_on     = ini_int(L"Enabled", 1) != 0;
+    g_others = ini_int(L"ShowOthers", 1) != 0;
     // a file a player can read and edit, with what each key does
     if (GetFileAttributesW(g_ini.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        std::string t =
-            "; QuickChat settings. Pause > Settings > Mods changes them too.\r\n"
-            "[QuickChat]\r\n"
-            "; 1 = on, 0 = off\r\n"
-            "Enabled=1\r\n"
-            "; 1 = show other players' messages, 0 = only send\r\n"
-            "ShowOthers=1\r\n"
-            "; the button held with the d-pad: 0 = LB, 1 = RB, 2 = View, 3 = off\r\n"
-            "Button=0\r\n"
-            "; the phrase on each direction, by number:";
-        for (uint32_t i = 0; i < kPhraseCount; ++i) t += std::string(i % 4 ? ", " : "\r\n;   ") + std::to_string(i) + " " + kPhrases[i];
-        t += "\r\n";
-        for (int d = 0; d < kDirs; ++d) t += std::string(kDirNames[d]) + "=" + std::to_string(kDefaultPhrase[d]) + "\r\n";
+        const std::string t = "; QuickChat settings. Pause > Settings > Mods changes them too.\r\n"
+                              "[QuickChat]\r\n"
+                              "; 1 = on, 0 = off (off: the Quick Chat list leaves ANNA's menu)\r\n"
+                              "Enabled=1\r\n"
+                              "; 1 = show other players' messages, 0 = only send\r\n"
+                              "ShowOthers=1\r\n";
         HANDLE h = CreateFileW(g_ini.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (h != INVALID_HANDLE_VALUE) {
             DWORD put = 0;
@@ -104,8 +82,6 @@ void load_settings() {
         }
     }
 }
-
-uint32_t modifier_bits() { return g_on ? kModifierBits[g_modifier.load()] : 0; }
 
 // ---- messages ---------------------------------------------------------------------------------
 
@@ -129,17 +105,15 @@ void show_message(const std::string& who, const std::string& text) {
     g_pop.push({who, text, GetTickCount64()});
 }
 
-void on_press(void*, const char*, uint32_t button) {
-    int d = -1;
-    switch (button) {
-        case FH2_PAD_DPAD_UP: d = Up; break;
-        case FH2_PAD_DPAD_RIGHT: d = Right; break;
-        case FH2_PAD_DPAD_DOWN: d = Down; break;
-        case FH2_PAD_DPAD_LEFT: d = Left; break;
-        default: return;
-    }
-    if (!g_on) return;
-    const uint32_t p = g_dir_phrase[d];
+// ---- ANNA's menu: a Quick Chat list in the top list, one entry a phrase ---------------------------
+// The entry's `user` is the phrase's number. on_choose runs on the game's thread once ANNA has shown the
+// choice and closed.
+
+int anna_shown(void*, const char*) { return g_on ? 1 : 0; }   // off: the entries hide, and the list with them
+
+void anna_choose(void* user, const char*) {
+    const uint32_t p = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(user));
+    if (!g_on || p >= kPhraseCount) return;
     bool sent;
     uint32_t seq;
     {
@@ -149,9 +123,40 @@ void on_press(void*, const char*, uint32_t button) {
     }
     if (!sent) return;   // too soon after the last one
     show_message("You", kPhrases[p]);
-    log("sent " + std::to_string(seq) + ": " + kPhrases[p] + " (" + kDirNames[d] + ")");
+    log("sent " + std::to_string(seq) + ": " + kPhrases[p]);
     if (!(g_api->api_version >= 9 && g_api->playing_online && g_api->playing_online()) && !g_told_offline.exchange(true))
         log("not playing online: your messages only show on your own screen");
+}
+
+// From the worker, once every mod has started (ANNA publishes its interface in its own start).
+void add_to_anna() {
+    g_api->wait_for_mods(30000);
+    auto* anna = static_cast<const FH2AnnaApi*>(g_api->get_interface(FH2ANNA_INTERFACE, 2));
+    if (!anna || anna->size < offsetof(FH2AnnaApi, add_entry) + sizeof anna->add_entry || !anna->add_entry) {
+        log("FH2 ANNA isn't installed (or is older than its menu for other mods): there's no way to send. Other players' "
+            "messages still show");
+        return;
+    }
+    FH2AnnaEntry list{};
+    list.size  = sizeof list;
+    list.key   = "quickchat";
+    list.label = "Quick Chat";
+    bool ok    = anna->add_entry(&list) != 0;
+    static std::string keys[kPhraseCount];
+    for (uint32_t p : kMenuOrder) {
+        keys[p] = "quickchat." + std::to_string(p);
+        FH2AnnaEntry e{};
+        e.size      = sizeof e;
+        e.key       = keys[p].c_str();
+        e.parent    = "quickchat";
+        e.label     = kPhrases[p];
+        e.on_choose = &anna_choose;
+        e.shown     = &anna_shown;
+        e.user      = reinterpret_cast<void*>(static_cast<uintptr_t>(p));
+        ok          = anna->add_entry(&e) != 0 && ok;
+    }
+    log(ok ? "Quick Chat is in ANNA's menu: D-pad down, Quick Chat, then a phrase"
+           : "ANNA didn't take every Quick Chat entry: some phrases can't be sent");
 }
 
 // ---- the bridge -------------------------------------------------------------------------------
@@ -280,6 +285,7 @@ FH2Hook* hook(const char* name, uintptr_t at, FH2InstructionFn fn) {
 }
 
 DWORD WINAPI worker(LPVOID) {
+    add_to_anna();
     g_base = static_cast<uint8_t*>(g_api->wait_for_code(0xFFFFFFFFu));
     if (!g_base) {
         log("the game's code never became ready: no pop-ups");
@@ -313,21 +319,9 @@ void on_setting(void*, const char* key, int v) {
     if (k == "Enabled") {
         g_on = v != 0;
         ini_set(L"Enabled", v != 0);
-        if (g_pad) g_pad->set_modifier(g_mod, "QuickChat", modifier_bits());
     } else if (k == "ShowOthers") {
         g_others = v != 0;
         ini_set(L"ShowOthers", v != 0);
-    } else if (k == "Button") {
-        if (v < 0 || v >= kModifiers) return;
-        g_modifier = v;
-        ini_set(L"Button", v);
-        if (g_pad) g_pad->set_modifier(g_mod, "QuickChat", modifier_bits());
-    } else {
-        for (int d = 0; d < kDirs; ++d)
-            if (k == kDirNames[d] && v >= 0 && static_cast<uint32_t>(v) < kPhraseCount) {
-                g_dir_phrase[d] = static_cast<uint32_t>(v);
-                ini_set(dir_key(d), v);
-            }
     }
 }
 
@@ -336,8 +330,8 @@ void add_rows(const FH2ModApi* api) {
     on.size        = sizeof on;
     on.key         = "Enabled";
     on.label       = "Quick chat";
-    on.description = "Hold the quick chat button and press the d-pad to send a phrase to the other players. "
-                     "While it's held, the d-pad doesn't change the radio or open telemetry.";
+    on.description = "A Quick Chat list in ANNA's menu (D-pad down while driving): pick a phrase to send it to the other "
+                     "players. Off: the list leaves the menu, and other players' messages don't show.";
     on.value       = g_on ? 1 : 0;
     on.on_change   = &on_setting;
     api->add_setting(g_mod, &on);
@@ -348,42 +342,11 @@ void add_rows(const FH2ModApi* api) {
     others.description = "Off: you still send, but other players' messages don't pop up.";
     others.value       = g_others ? 1 : 0;
     api->add_setting(g_mod, &others);
-
-    if (api->api_version < 9) return;   // choice rows came with platform 2.8.0
-    FH2Setting b{};
-    b.size         = sizeof b;
-    b.key          = "Button";
-    b.label        = "Quick chat button";
-    b.description  = "Held with the d-pad. It still does its own job in the game too: LB is the clutch when you "
-                     "drive manual with clutch, RB and View move the camera.";
-    b.value        = g_modifier;
-    b.on_change    = &on_setting;
-    b.kind         = FH2_SETTING_CHOICE;
-    b.choices      = kModifierNames;
-    b.choice_count = kModifiers;
-    api->add_setting(g_mod, &b);
-
-    static std::string labels[kDirs];
-    for (int d = 0; d < kDirs; ++d) {
-        labels[d] = std::string("Quick chat: ") + kDirNames[d];
-        FH2Setting p{};
-        p.size         = sizeof p;
-        p.key          = kDirNames[d];
-        p.label        = labels[d].c_str();
-        p.description  = "The phrase sent with this d-pad direction.";
-        p.value        = static_cast<int>(g_dir_phrase[d].load());
-        p.on_change    = &on_setting;
-        p.kind         = FH2_SETTING_CHOICE;
-        p.choices      = kPhrases;
-        p.choice_count = kPhraseCount;
-        api->add_setting(g_mod, &p);
-    }
 }
 
 } // namespace
 
 FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
-    if (api->api_version < 7) return 1;   // instruction hooks came with platform 2.6.0
     g_api = api;
     FH2ModInfo info{};
     info.size             = sizeof info;
@@ -391,9 +354,13 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     info.version          = QC_VERSION;
     info.platform_version = FH2MOD_PLATFORM_VERSION;
     info.check_updates    = 0;   // no GitHub releases yet
-    if (api->api_version >= 6) info.description = "Hold LB and press the d-pad to send a quick phrase to the other players online.";
+    if (api->api_version >= 6) info.description = "Quick phrases for the other players online, from a Quick Chat list in ANNA's menu.";
     g_mod = api->register_mod(&info);
-    if (!g_mod) return 1;
+    if (!g_mod) return 0;
+    if (api->api_version < 7) {   // instruction hooks (the pop-ups) came with platform 2.6.0
+        log("this platform is older than 2.6.0: quick chat is off");
+        return 0;
+    }
 
     g_ini = std::wstring(api->azimuth_dir && *api->azimuth_dir ? api->azimuth_dir : L".") + L"\\fh2-mods\\QuickChat.ini";
     load_settings();
@@ -415,22 +382,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
         log("this platform has no HUD feed: messages show as pop-ups");
     }
 
-    g_pad = static_cast<const FH2PadInterface*>(api->get_interface(FH2_PAD_INTERFACE, 1));
-    if (!g_pad) {
-        log("this platform has no pad layers (FH2Platform.PadLayer, the pad layer preview): no quick chat buttons");
-    } else {
-        FH2PadLayer l{};
-        l.size     = sizeof l;
-        l.key      = "QuickChat";
-        l.modifier = modifier_bits();
-        l.buttons  = FH2_PAD_DPAD_UP | FH2_PAD_DPAD_DOWN | FH2_PAD_DPAD_LEFT | FH2_PAD_DPAD_RIGHT;
-        l.on_press = &on_press;
-        if (!g_pad->add_layer(g_mod, &l)) log("the quick chat buttons were refused (the line above says why)");
-    }
     if (HANDLE t = CreateThread(nullptr, 0, worker, nullptr, 0, nullptr)) CloseHandle(t);
-
-    std::string dirs;
-    for (int d = 0; d < kDirs; ++d) dirs += std::string(d ? ", " : "") + kDirNames[d] + " \"" + kPhrases[g_dir_phrase[d]] + "\"";
-    log(std::string(g_on ? "on" : "off") + ", " + kModifierNames[g_modifier] + " + d-pad: " + dirs);
+    log(g_on ? "on" : "off (Quick chat, on its page under Pause > MODS)");
     return 0;
 }
