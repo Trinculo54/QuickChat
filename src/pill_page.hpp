@@ -1,20 +1,20 @@
-// The chat pill over a car: the game's own name tag page (media\UI.zip, Scenes/Anthem/AR_OpponentLabel.xaml, one
-// page object per name tag) with a pill added over the tag. No game or Windows in here, so the test can run it.
+// The chat box over a car: the game's own name tag page (media\UI.zip, Scenes/Anthem/AR_OpponentLabel.xaml, one
+// page object per name tag) with a box added over the tag. No game or Windows in here, so the test can run it.
+// (The code and the ini keys still say "pill": it began as Forza Horizon 5's round-ended one.)
 //
-// The pill is Forza Horizon 5's in FH2's own markup: a white pill with round ends and dark text (#353535), at
-// least 350 wide and 164 high, the text 60 in from each end. It pops up from its bottom edge (scale 0.16 to 1 in
-// 0.63 s, with an overshoot), stays, and from 2 s fades while it rises 64, gone at 2.42 s: FH5's timings
-// (its A_Storyboard_PopChatBox). FH5 draws the pill from a picture; here the ends are polygons, like the page's own
-// pin under the tag, so the mod ships no picture.
+// The box is a plain light rectangle (#F0F0F0) with dark text (#353535), square like the name tag under it, at
+// least 350 wide and 164 high, the text 60 in from each side. It moves as Forza Horizon 5's chat pill does: it pops
+// up from its bottom edge (scale 0.16 to 1 in 0.63 s, with an overshoot), stays, and from 2 s fades while it rises
+// 64, gone at 2.42 s (FH5's A_Storyboard_PopChatBox).
 //
 // Everything used is markup the game's own pages use (a bad page stops the game when it's loaded):
 //   - a ControlTemplate with a DataTrigger that starts a Storyboard on its named element: Controls/HUDSkillTokenControl.xaml;
 //   - BackEase and QuadraticEase resources: Controls/HUDDriveToEventControl.xaml, Controls/HUDNetworkStatusControl.xaml;
-//   - FZGeometry polygons, the Control with a template, StringVisConverter: this page itself.
+//   - the Control with a template, StringVisConverter: this page itself.
 //
 // Two texts feed it, both QuickChat's page texts (FH2 Mod Platform API 11):
 //   FH2Mod_Text_QuickChat_Pill     the phrase on this tag, or nothing
-//   FH2Mod_Text_QuickChat_PillOn   "1" or "2" while this tag has a pill (they take turns per message, so a new
+//   FH2Mod_Text_QuickChat_PillOn   "1" or "2" while this tag has a box (they take turns per message, so a new
 //                                  message on a tag that still shows one pops again), else nothing
 #pragma once
 
@@ -28,31 +28,9 @@ inline constexpr char kPillOn[]       = "QuickChat_PillOn";
 
 namespace pill_xaml {
 
-// The pill's shape and text: two round ends (half circles of radius 82 as 16-sided polygons) and a middle that
-// grows with the text.
+// The box's shape and text: a plain light rectangle that grows with the text.
 inline constexpr char kBody[] = R"X(
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="82" />
-                        <ColumnDefinition />
-                        <ColumnDefinition Width="82" />
-                    </Grid.ColumnDefinitions>
-                    <local:FZMaterial Grid.Column="0"
-                                      Color="#FFFFFFFF">
-                        <local:FZMaterial.Data>
-                            <local:FZGeometry Data="M82,0 66,1.576 50.62,6.242 36.44,13.82 24.02,24.02 13.82,36.44 6.242,50.62 1.576,66 0,82 1.576,98 6.242,113.4 13.82,127.6 24.02,140 36.44,150.2 50.62,157.8 66,162.4 82,164z" />
-                        </local:FZMaterial.Data>
-                    </local:FZMaterial>
-                    <local:FZMaterial Grid.Column="1"
-                                      Color="#FFFFFFFF"
-                                      Margin="-1,0,-1,0" />
-                    <local:FZMaterial Grid.Column="2"
-                                      Color="#FFFFFFFF">
-                        <local:FZMaterial.Data>
-                            <local:FZGeometry Data="M0,0 16,1.576 31.38,6.242 45.56,13.82 57.98,24.02 68.18,36.44 75.76,50.62 80.42,66 82,82 80.42,98 75.76,113.4 68.18,127.6 57.98,140 45.56,150.2 31.38,157.8 16,162.4 0,164z" />
-                        </local:FZMaterial.Data>
-                    </local:FZMaterial>
-                </Grid>
+                <local:FZMaterial Color="#FFF0F0F0" />
                 <local:FZTextBlock Text="{Binding FH2Mod_Text_QuickChat_Pill}"
                                    Style="{StaticResource A_Style_FZTextBlock_AnthemA}"
                                    Color="#FF353535"
@@ -62,7 +40,7 @@ inline constexpr char kBody[] = R"X(
                                    VerticalAlignment="Center" />
 )X";
 
-// One trigger: the pill's life, started when PillOn becomes `value`.
+// One trigger: the box's life, started when PillOn becomes `value`.
 inline std::string trigger(const char* value) {
     return std::string(R"X(
                 <DataTrigger Binding="{Binding FH2Mod_Text_QuickChat_PillOn}" Value=")X") + value + R"X(">
@@ -95,7 +73,7 @@ inline std::string trigger(const char* value) {
 )X";
 }
 
-// Into the page's resources: the two easings and the pill as a template (hidden until a trigger starts it).
+// Into the page's resources: the two easings and the box as a template (hidden until a trigger starts it).
 inline std::string resources() {
     return std::string(R"X(
         <BackEase x:Key="QuickChat_Ease_Pop" EasingMode="EaseOut" Amplitude="0.5"/>
@@ -123,7 +101,7 @@ inline std::string resources() {
 )X";
 }
 
-// Into the page, over the tag: the template's place, or (plain) the pill itself, shown while it has a text.
+// Into the page, over the tag: the template's place, or (plain) the box itself, shown while it has a text.
 inline constexpr char kPlacePop[] = R"X(
             <Control Template="{StaticResource QuickChat_ControlTemplate_Pill}"
                      HorizontalAlignment="Center"
@@ -145,15 +123,15 @@ inline std::string place_plain() {
 
 } // namespace pill_xaml
 
-// The game's name tag page with the pill added. `pop`: the pill pops up and fades by itself (FH5's animation);
-// without it the pill is simply there while the tag has a text. Empty, with `why`, if the page isn't the one
+// The game's name tag page with the box added. `pop`: the box pops up and fades by itself (FH5's animation);
+// without it the box is simply there while the tag has a text. Empty, with `why`, if the page isn't the one
 // expected.
 inline std::string with_pill(const std::string& page, bool pop, std::string* why = nullptr) {
     auto fail = [&](const char* w) {
         if (why) *why = w;
         return std::string();
     };
-    if (page.find("FH2Mod_Text_QuickChat_Pill") != std::string::npos) return fail("it already has the pill");
+    if (page.find("FH2Mod_Text_QuickChat_Pill") != std::string::npos) return fail("it already has the box");
     // after the row of icons over the tag (PhotoIcon, HVTIcon), still inside Grid_Container
     const std::string icon = "x:Name=\"HVTIcon\" />";
     const size_t at        = page.find(icon);

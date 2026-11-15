@@ -73,23 +73,23 @@ int main(int argc, char** argv) {
     check(clean_name("a\x01" "b\xC3\xA9" "c") == "abc", "control and non-ASCII bytes are dropped");
     check(clean_name("ABCDEFGHIJKLMNOPQRSTUVWXYZ").size() == 20, "at most 20 characters");
 
-    // the pill over a car: found by gamertag, gone when it has run out, a new message takes its place
+    // the box over a car: found by gamertag, gone when it has run out, a new message takes its place
     {
         Pills ps;
         ps.show("AcidCatFish", 2, 1000);
         const Pills::Pill* p = ps.find("acidcatfish", 1000);
-        check(p && p->phrase == 2 && p->n == 1, "a pill is found by its gamertag, whatever the case");
+        check(p && p->phrase == 2 && p->n == 1, "a box is found by its gamertag, whatever the case");
         check(!ps.find("Someone else", 1000) && !ps.find("", 1000), "another tag, or one with no gamertag, has none");
         ps.show("AcidCatFish", 3, 1500);
         p = ps.find("AcidCatFish", 1500);
-        check(p && p->phrase == 3 && p->n == 2, "a new message takes the pill's place, with the other \"on\" text");
+        check(p && p->phrase == 3 && p->n == 2, "a new message takes the box's place, with the other \"on\" text");
         check(!ps.expire(1500 + kPillMs - 1) && ps.find("AcidCatFish", 1500 + kPillMs - 1), "it lasts kPillMs");
         check(!ps.find("AcidCatFish", 1500 + kPillMs) && ps.expire(1500 + kPillMs) && ps.by_name.empty(), "then it's gone");
         ps.show("", 1, 1000);
-        check(ps.by_name.empty(), "no gamertag: no pill");
+        check(ps.by_name.empty(), "no gamertag: no box");
     }
 
-    // the name tag page: the pill goes in once, after the row of icons, and only into the page expected
+    // the name tag page: the box goes in once, after the row of icons, and only into the page expected
     {
         const std::string page = "<Page><Page.Resources><local:StringVisConverter x:Key=\"A_Converter_StringToVis\" /></Page.Resources>"
                                  "<Grid><StackPanel><local:FZMaterial x:Name=\"HVTIcon\" /></StackPanel></Grid></Page>";
@@ -101,17 +101,17 @@ int main(int argc, char** argv) {
             return n;
         };
         check(count(pop, "{Binding FH2Mod_Text_QuickChat_Pill}") == 1 && count(pop, "{Binding FH2Mod_Text_QuickChat_PillOn}") == 2,
-              "the popping pill: one text, and a trigger for each \"on\" text");
+              "the popping box: one text, and a trigger for each \"on\" text");
         check(pop.find("QuickChat_ControlTemplate_Pill\"") < pop.find("</Page.Resources>") &&
                   pop.find("<Control Template=") > pop.find("</StackPanel>") && pop.find("<Control Template=") < pop.find("</Grid></Page>"),
               "its template is in the resources, its place after the row of icons");
         check(count(plain, "FH2Mod_Text_QuickChat_Pill") == 2 && count(plain, "PillOn") == 0 && count(plain, "Storyboard") == 0,
-              "the plain pill: shown while it has a text, nothing animated");
-        check(with_pill(pop, true, &why).empty() && why == "it already has the pill", "a page that has the pill isn't given another");
+              "the plain box: shown while it has a text, nothing animated");
+        check(with_pill(pop, true, &why).empty() && why == "it already has the box", "a page that has the box isn't given another");
         check(with_pill("<Page></Page>", true, &why).empty() && !why.empty(), "a page that isn't the name tag page is refused, with why");
     }
 
-    // with the game's UI.zip: its real name tag page, with the pill, for a look (written beside the zip's name given)
+    // with the game's UI.zip: its real name tag page, with the box, for a look (written beside the zip's name given)
     if (argc > 2) {
         std::string zip;
         if (FILE* f = std::fopen(argv[1], "rb")) {
@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
         for (int pop = 0; pop < 2; ++pop) {
             std::string why;
             const std::string out = with_pill(page, pop != 0, &why);
-            check(!out.empty(), pop ? "the popping pill goes into the game's page" : "the plain pill goes into the game's page");
+            check(!out.empty(), pop ? "the popping box goes into the game's page" : "the plain box goes into the game's page");
             if (FILE* f = std::fopen((std::string(argv[2]) + (pop ? "-pop.xaml" : "-plain.xaml")).c_str(), "wb")) {
                 std::fwrite(out.data(), 1, out.size(), f);
                 std::fclose(f);
