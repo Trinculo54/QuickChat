@@ -122,4 +122,45 @@ inline std::string clean_name(const char* name) {
     return s.empty() ? "Someone" : s;
 }
 
+// ---- the pill over a car ----------------------------------------------------------------------
+// A message also shows as a pill over its sender's car, on the name tag that carries their gamertag. The tag is
+// found by that gamertag: it's what the online mod gives with a message, and what the tag itself shows.
+
+constexpr uint64_t kPillMs = 2600;   // the pill's animation takes 2.42 s (pill_page.hpp); then the tag's text goes
+
+// A gamertag as the pills are keyed: the pop-up's cleaning, in lower case. Empty for no gamertag (never matched).
+inline std::string name_key(const std::string& name) {
+    std::string s;
+    for (char c : name)
+        if (s.size() < 20 && c >= 0x20 && c < 0x7F) s += static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    return s;
+}
+
+struct Pills {
+    struct Pill {
+        uint32_t phrase = 0;
+        uint64_t until  = 0;
+        uint32_t n      = 0;   // 1 for a pill on a tag that had none, one more for each that takes its place: odd and
+                               // even take turns as the tag's "on" text, so the new one pops up again
+    };
+    std::map<std::string, Pill> by_name;   // name_key -> the pill on that player's tag
+
+    void show(const std::string& name, uint32_t phrase, uint64_t now) {
+        const std::string k = name_key(name);
+        if (k.empty()) return;
+        auto it          = by_name.find(k);
+        const uint32_t n = it == by_name.end() ? 1 : it->second.n + 1;
+        by_name[k]       = {phrase, now + kPillMs, n};
+    }
+    // The pill for the tag that shows `name`, if it has one that hasn't run out.
+    const Pill* find(const std::string& name, uint64_t now) const {
+        auto it = by_name.find(name_key(name));
+        return it != by_name.end() && now < it->second.until ? &it->second : nullptr;
+    }
+    // Drops the pills that have run out: true if any did (the tags then need telling).
+    bool expire(uint64_t now) {
+        return std::erase_if(by_name, [now](const auto& kv) { return now >= kv.second.until; }) != 0;
+    }
+};
+
 } // namespace qc

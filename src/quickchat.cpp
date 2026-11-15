@@ -16,11 +16,17 @@
 // constructor and destructor (game+0x73E0B1, game+0x73F046), and on the game thread's AchievementsModule
 // tick (game+0x3FCD84) MakeDisplayString (game+0x323310) and ShowNotif (game+0x755330) show one, both
 // byte-checked first.
+//
+// A message also shows as a pill over its sender's car, as in Forza Horizon 5: the game's name tag page with a
+// pill added (src/pill_page.hpp), its text a page text of QuickChat's (platform 2.9.1, API 11), given to the tag
+// that shows the sender's gamertag. See "the pill over a car" below.
 #include "fh2anna.h"
 #include "fh2mod.h"
 #include "fh2mod_hud.h"
+#include "pill_page.hpp"
 #include "qc_core.hpp"
 #include "quickchat.h"
+#include "unzip.hpp"
 
 #include <windows.h>
 
@@ -55,6 +61,7 @@ std::wstring g_ini;
 // ---- settings: fh2-mods\QuickChat.ini ----------------------------------------------------------
 
 std::atomic<bool> g_on{true}, g_others{true};
+bool g_pill = true, g_pill_pop = true, g_pill_test = false;   // read once, at the start
 
 void log(const std::string& s) {
     if (g_api && g_mod) g_api->log(g_mod, s.c_str());
@@ -66,14 +73,26 @@ void ini_set(const wchar_t* key, int v) { WritePrivateProfileStringW(L"QuickChat
 void load_settings() {
     g_on     = ini_int(L"Enabled", 1) != 0;
     g_others = ini_int(L"ShowOthers", 1) != 0;
+    g_pill      = ini_int(L"Pill", 1) != 0;
+    g_pill_pop  = ini_int(L"PillPop", 1) != 0;
+    g_pill_test = ini_int(L"PillTest", 0) != 0;
     // a file a player can read and edit, with what each key does
     if (GetFileAttributesW(g_ini.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        const std::string t = "; QuickChat settings. Pause > Settings > Mods changes them too.\r\n"
+        const std::string t = "; QuickChat settings. Pause > MODS > YOUR MODS > QuickChat changes the first three too.\r\n"
                               "[QuickChat]\r\n"
                               "; 1 = on, 0 = off (off: the Quick Chat list leaves ANNA's menu)\r\n"
                               "Enabled=1\r\n"
                               "; 1 = show other players' messages, 0 = only send\r\n"
-                              "ShowOthers=1\r\n";
+                              "ShowOthers=1\r\n"
+                              "; 1 = a message also shows as a pill over its sender's car, 0 = only in the chat log.\r\n"
+                              "; Read when the game starts.\r\n"
+                              "Pill=1\r\n"
+                              "; 1 = the pill pops up and fades away, 0 = it simply appears and goes (try 0 if the pill\r\n"
+                              "; never shows). Read when the game starts.\r\n"
+                              "PillPop=1\r\n"
+                              "; 1 = for trying the pill offline: every 5 seconds a Drivatar near you says a phrase, one\r\n"
+                              "; car after another, and the chat log names that Drivatar. Read when the game starts.\r\n"
+                              "PillTest=0\r\n";
         HANDLE h = CreateFileW(g_ini.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (h != INVALID_HANDLE_VALUE) {
             DWORD put = 0;
@@ -110,6 +129,8 @@ void show_message(const std::string& who, const std::string& text) {
 // choice and closed.
 
 int anna_shown(void*, const char*) { return g_on ? 1 : 0; }   // off: the entries hide, and the list with them
+
+void pill_show(const std::string& name, uint32_t phrase);   // the pill over a car, below
 
 void anna_choose(void* user, const char*) {
     const uint32_t p = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(user));
@@ -180,6 +201,7 @@ int bridge_deliver(uint32_t from, const char* name, uint32_t seq, uint32_t p) {
     log("from " + who + ": " + kPhrases[p]);
     if (!g_on || !g_others) return 0;
     show_message(who, kPhrases[p]);
+    pill_show(who, p);
     return 1;
 }
 
@@ -284,6 +306,176 @@ FH2Hook* hook(const char* name, uintptr_t at, FH2InstructionFn fn) {
     return h;
 }
 
+// ---- the pill over a car ------------------------------------------------------------------------
+// The game has 12 name tags, each a page object of its OpponentLabel class (vtable game+0x2E11A68), made when the
+// game starts and handed to the cars near you. Each asks QuickChat for its pill's text (the page texts), and
+// QuickChat answers by the gamertag the tag is showing:
+//   - OpponentLabel's UserProfile property (registered at game+0xDF01E0 with the getter game+0xDBC9D0, which
+//     calls game+0xCBA990) is the object at the tag's +0x410;
+//   - a profile's FormattedGamertag (the getter game+0xC2A5C0, which calls game+0xBDF6A0) is the string at the
+//     profile's +0x60: UTF-16 text at its +0x28, the length at +0x30.
+// All four pieces of code are byte-checked once; if one differs there are no pills.
+constexpr uintptr_t RVA_LABEL_VTABLE = 0x2E11A68;
+struct CodeCheck {
+    uintptr_t rva;
+    const uint8_t* bytes;
+    size_t n;
+};
+const uint8_t kLabelProfileReg[] = {0x48, 0x8D, 0x05, 0xA9, 0xC7, 0xFC, 0xFF};   // lea rax, [game+0xDBC9D0]
+const uint8_t kLabelProfileGet[] = {0x48, 0x8D, 0x54, 0x24, 0x28, 0x49, 0x8B, 0xC8, 0xE8, 0x8D, 0xDF, 0xEF, 0xFF};   // call game+0xCBA990
+const uint8_t kLabelProfileAt[]  = {0x48, 0x83, 0xEC, 0x18, 0x48, 0x8B, 0x81, 0x10, 0x04, 0x00, 0x00};   // mov rax, [rcx + 0x410]
+const uint8_t kProfileTagGet[]   = {0x48, 0x8D, 0x54, 0x24, 0x28, 0x49, 0x8B, 0xC8, 0xE8, 0xAD, 0x50, 0xFB, 0xFF};   // call game+0xBDF6A0
+const uint8_t kProfileTagAt[]    = {0x48, 0x83, 0xEC, 0x18, 0x48, 0x8B, 0x41, 0x60};   // mov rax, [rcx + 0x60]
+const CodeCheck kTagCode[]       = {{0xDF0220, kLabelProfileReg, sizeof kLabelProfileReg},
+                                    {0xDBC9F6, kLabelProfileGet, sizeof kLabelProfileGet},
+                                    {0xCBA990, kLabelProfileAt, sizeof kLabelProfileAt},
+                                    {0xC2A5E6, kProfileTagGet, sizeof kProfileTagGet},
+                                    {0xBDF6A0, kProfileTagAt, sizeof kProfileTagAt}};
+
+bool g_pill_page = false;            // the name tag page has the pill (set in fh2mod_init)
+std::atomic<int> g_tag_code{0};      // the code above: 0 not checked yet, 1 matches, -1 doesn't
+std::mutex g_pill_mu;                // the pills and the tags
+Pills g_pills;
+std::vector<void*> g_tags;           // the name tags that have asked for a text
+
+// The gamertag a name tag is showing, ASCII only (as clean_name); empty for none, or a page that isn't a name tag.
+std::string tag_name(const void* page) {
+    auto* base = static_cast<uint8_t*>(g_api->game_base());
+    if (!base) return {};
+    if (!g_tag_code) {
+        bool ok = true;
+        uint8_t have[16];
+        for (const CodeCheck& c : kTagCode) ok = ok && sread(base + c.rva, have, c.n) && std::memcmp(have, c.bytes, c.n) == 0;
+        if (g_tag_code.exchange(ok ? 1 : -1) == 0 && !ok) log("the pill over cars is off: the game's name tag code doesn't match");
+    }
+    if (g_tag_code != 1 || srd<uint8_t*>(page) != base + RVA_LABEL_VTABLE) return {};
+    auto* profile = srd<const uint8_t*>(static_cast<const uint8_t*>(page) + 0x410);
+    auto* str     = profile ? srd<const uint8_t*>(profile + 0x60) : nullptr;
+    if (!str) return {};
+    const int32_t len = srd<int32_t>(str + 0x30, 0);
+    wchar_t w[64];
+    if (len <= 0 || len > 64 || !sread(srd<const wchar_t*>(str + 0x28), w, len * sizeof(wchar_t))) return {};
+    std::string s;
+    for (int i = 0; i < len; ++i)
+        if (w[i] >= 0x20 && w[i] < 0x7F) s += static_cast<char>(w[i]);
+    return s;
+}
+
+// A name tag asks for its pill's text (the phrase), or with `user` set for its "on" text. On the game's UI thread.
+void pill_text(void* user, void* page, char* out, size_t size) {
+    if (!size) return;
+    out[0] = 0;
+    {
+        std::lock_guard<std::mutex> lk(g_pill_mu);
+        if (g_tags.size() < 64 && std::find(g_tags.begin(), g_tags.end(), page) == g_tags.end()) g_tags.push_back(page);
+        if (g_pills.by_name.empty()) return;   // no pill anywhere: the game's memory isn't read
+    }
+    if (!g_on) return;
+    const std::string name = tag_name(page);
+    std::lock_guard<std::mutex> lk(g_pill_mu);
+    if (const Pills::Pill* p = g_pills.find(name, GetTickCount64()))
+        std::snprintf(out, size, "%s", user ? (p->n & 1 ? "1" : "2") : kPhrases[p->phrase]);
+}
+
+// Has every name tag ask again (on the game's thread, at its next tick).
+void pill_refresh() {
+    g_api->page_text_changed(g_mod, kPillText, nullptr);
+    g_api->page_text_changed(g_mod, kPillOn, nullptr);
+}
+
+void pill_show(const std::string& name, uint32_t p) {
+    if (!g_pill_page || !g_on || p >= kPhraseCount) return;
+    {
+        std::lock_guard<std::mutex> lk(g_pill_mu);
+        g_pills.show(name, p, GetTickCount64());
+    }
+    pill_refresh();
+}
+
+// PillTest=1, for trying the pill offline, where nobody sends you anything: a Drivatar "says" the next phrase, one
+// name tag after another, as if the online mod had delivered it. The reads here aren't on the game's thread; they're
+// guarded, and a tag caught mid-change only gives a wrong name once.
+void pill_test_step(uint32_t step) {
+    static bool told_none = false;
+    std::vector<void*> tags;
+    {
+        std::lock_guard<std::mutex> lk(g_pill_mu);
+        tags = g_tags;
+    }
+    std::vector<std::string> names;
+    for (void* t : tags) {
+        const std::string n = tag_name(t);
+        if (!n.empty() && std::find(names.begin(), names.end(), n) == names.end()) names.push_back(n);
+    }
+    if (names.empty()) {
+        if (!told_none) log("PillTest: none of the " + std::to_string(tags.size()) + " name tags has a gamertag yet (drive near other cars)");
+        told_none = true;
+        return;
+    }
+    told_none              = false;
+    const std::string& who = names[step % names.size()];
+    const uint32_t p       = kMenuOrder[step % kPhraseCount];
+    log("PillTest: " + who + " says " + kPhrases[p] + " (" + std::to_string(names.size()) + " of " + std::to_string(tags.size()) +
+        " name tags have a gamertag)");
+    show_message(who, kPhrases[p]);
+    pill_show(who, p);
+}
+
+std::string read_file(const std::wstring& path) {
+    std::string d;
+    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return d;
+    LARGE_INTEGER size{};
+    if (GetFileSizeEx(h, &size) && size.QuadPart > 0 && size.QuadPart < (64 << 20)) {
+        d.resize(static_cast<size_t>(size.QuadPart));
+        DWORD got = 0;
+        if (!ReadFile(h, d.data(), static_cast<DWORD>(d.size()), &got, nullptr) || got != d.size()) d.clear();
+    }
+    CloseHandle(h);
+    return d;
+}
+
+// From fh2mod_init: the game reads the name tag page when it makes its name tags, as it starts.
+void add_pill(const FH2ModApi* api) {
+    if (!g_on || !g_pill) {
+        log("the pill over cars is off (Pill and Enabled in QuickChat.ini, read when the game starts)");
+        return;
+    }
+    if (api->api_version < 11 || api->size < offsetof(FH2ModApi, page_text_changed) + sizeof api->page_text_changed) {
+        log("this platform can't put a mod's text on the game's name tags (2.9.1 can): messages show in the chat log, "
+            "without the pill over the sender's car");
+        return;
+    }
+    const std::wstring zip = std::wstring(api->game_dir ? api->game_dir : L"") + L"\\media\\UI.zip";
+    std::string why;
+    const std::string page = with_pill(unzip_from(read_file(zip), kPillPagePath), g_pill_pop, &why);
+    if (page.empty()) {
+        log("no pill over cars: the game's name tag page " + (why.empty() ? std::string("couldn't be read from media\\UI.zip") : "isn't as expected (" + why + ")"));
+        return;
+    }
+    if (!api->add_page_text(g_mod, kPillText, &pill_text, nullptr) || !api->add_page_text(g_mod, kPillOn, &pill_text, &g_pill_page) ||
+        !api->set_file(g_mod, (std::string("UI/") + kPillPagePath).c_str(), page.data(), page.size())) {
+        log("no pill over cars: the platform refused its texts or the name tag page (the line above says why)");
+        return;
+    }
+    g_pill_page = true;
+    log(std::string("a message also shows as a pill over its sender's car") + (g_pill_pop ? "" : " (PillPop=0: it appears and goes without the pop)") +
+        (g_pill_test ? "; PillTest=1: every 5 seconds a Drivatar says a phrase, one name tag after another" : ""));
+}
+
+DWORD WINAPI pill_worker(LPVOID) {   // takes a pill's text away again once it has run out
+    for (uint32_t tick = 1;; ++tick) {
+        Sleep(200);
+        bool gone;
+        {
+            std::lock_guard<std::mutex> lk(g_pill_mu);
+            gone = g_pills.expire(GetTickCount64());
+        }
+        if (gone) pill_refresh();
+        if (g_pill_test && g_on && tick % 25 == 0) pill_test_step(tick / 25);   // every 5 seconds
+    }
+}
+
 DWORD WINAPI worker(LPVOID) {
     add_to_anna();
     g_base = static_cast<uint8_t*>(g_api->wait_for_code(0xFFFFFFFFu));
@@ -322,6 +514,8 @@ void on_setting(void*, const char* key, int v) {
     } else if (k == "ShowOthers") {
         g_others = v != 0;
         ini_set(L"ShowOthers", v != 0);
+    } else if (k == "Pill") {
+        ini_set(L"Pill", v != 0);   // read at the next start
     }
 }
 
@@ -342,6 +536,15 @@ void add_rows(const FH2ModApi* api) {
     others.description = "Off: you still send, but other players' messages don't pop up.";
     others.value       = g_others ? 1 : 0;
     api->add_setting(g_mod, &others);
+
+    FH2Setting pill = on;
+    pill.key           = "Pill";
+    pill.label         = "Quick chat: pill over cars";
+    pill.description   = "A message also shows as a pill over its sender's car, as well as in the chat log. Needs platform "
+                         "2.9.1 or newer. A change takes effect the next time the game starts.";
+    pill.value         = g_pill ? 1 : 0;
+    pill.needs_restart = 1;
+    api->add_setting(g_mod, &pill);
 }
 
 } // namespace
@@ -381,6 +584,10 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     } else {
         log("this platform has no HUD feed: messages show as pop-ups");
     }
+
+    add_pill(api);
+    if (g_pill_page)
+        if (HANDLE t = CreateThread(nullptr, 0, pill_worker, nullptr, 0, nullptr)) CloseHandle(t);
 
     if (HANDLE t = CreateThread(nullptr, 0, worker, nullptr, 0, nullptr)) CloseHandle(t);
     log(g_on ? "on" : "off (Quick chat, on its page under Pause > MODS)");

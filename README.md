@@ -9,6 +9,7 @@ A mod for the [FH2 Mod Platform](https://github.com/Trinculo54/fh2-mod-platform)
 - **Send:** tap D-pad down to open ANNA, go to **Quick Chat**, and choose a phrase with D-pad right. ANNA closes and the phrase is sent. The ones said most come first: Hello!, Thanks!, Sorry!, Nice race!
 - **By voice:** with ANNA's voice commands on, say "ANNA, Quick Chat", then the phrase.
 - **One message every 1.5 seconds** at most.
+- **A pill over the car:** another player's message also pops up as a white pill over their car, on their name tag, and fades after about two and a half seconds, as in Forza Horizon 5. This needs FH2 Mod Platform 2.9.1 or newer; on an older one messages only show in the chat log. Your own car has no name tag, so your own messages have no pill on your screen.
 - **Offline**, your own messages still show, so you can try it.
 - **Without FH2 ANNA** there's no way to send; other players' messages still show.
 
@@ -20,6 +21,16 @@ Pause > MODS > YOUR MODS > QuickChat, or `fh2-mods\QuickChat.ini`:
 |---|---|---|
 | Quick chat | `Enabled` | On or off. Off: the Quick Chat list leaves ANNA's menu, and other players' messages don't show. |
 | Quick chat: other players' messages | `ShowOthers` | Off: you still send, but other players' messages don't show. |
+| Quick chat: pill over cars | `Pill` | Off: messages only show in the chat log. A change takes effect the next time the game starts. |
+
+Only in `QuickChat.ini`, both read when the game starts:
+
+| Key | What it does |
+|---|---|
+| `PillPop` | 1: the pill pops up and fades away. 0: it simply appears and goes. Try 0 if the pill never shows. |
+| `PillTest` | 1: for trying the pill offline. Every 5 seconds a Drivatar near you "says" a phrase, one car after another, and the chat log names it. |
+
+The pill is the game's own name tag page (`UI.zip`, `Scenes/Anthem/AR_OpponentLabel.xaml`) with a pill added, so another mod that replaces that page can't be used together with it.
 
 ## Phrases
 
@@ -40,7 +51,9 @@ cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=c
 cmake --build build
 ```
 
-`-DQC_TESTS=ON` also builds `quickchat_test.exe`, the offline test of the phrase, list, cooldown and pop-up rules.
+`-DQC_TESTS=ON` also builds `quickchat_test.exe`, the offline test of the phrase, list, cooldown, pop-up and pill rules. Given the game's `media\UI.zip` and a name, it also writes the name tag page with the pill, both ways, under that name.
+
+`src/unzip.hpp` has the FH2 Mod Platform's DEFLATE reader (MIT).
 
 `include/fh2anna.h` is FH2 ANNA's interface for other mods, copied from its repository (MIT, qiangqiang101).
 

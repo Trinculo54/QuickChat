@@ -1,6 +1,8 @@
 // QuickChat's rules (src/qc_core.hpp), with no game. Exits 0 when every check passes.
+#include "pill_page.hpp"
 #include "qc_core.hpp"
 #include "quickchat.h"
+#include "unzip.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -15,7 +17,8 @@ void check(bool ok, const char* what) {
 }
 } // namespace
 
-int main() {
+// quickchat_test.exe [<the game's media\UI.zip> <a name to write the two pages under>]
+int main(int argc, char** argv) {
     // the phrases: numbers are what crosses the network
     check(kPhraseCount == 16, "16 phrases");
     check(std::strcmp(phrase(0), "Nice race!") == 0 && std::strcmp(phrase(15), "No") == 0, "phrase numbers keep their meaning");
@@ -69,6 +72,65 @@ int main() {
     check(clean_name("Trinculo54") == "Trinculo54", "a gamertag as it is");
     check(clean_name("a\x01" "b\xC3\xA9" "c") == "abc", "control and non-ASCII bytes are dropped");
     check(clean_name("ABCDEFGHIJKLMNOPQRSTUVWXYZ").size() == 20, "at most 20 characters");
+
+    // the pill over a car: found by gamertag, gone when it has run out, a new message takes its place
+    {
+        Pills ps;
+        ps.show("AcidCatFish", 2, 1000);
+        const Pills::Pill* p = ps.find("acidcatfish", 1000);
+        check(p && p->phrase == 2 && p->n == 1, "a pill is found by its gamertag, whatever the case");
+        check(!ps.find("Someone else", 1000) && !ps.find("", 1000), "another tag, or one with no gamertag, has none");
+        ps.show("AcidCatFish", 3, 1500);
+        p = ps.find("AcidCatFish", 1500);
+        check(p && p->phrase == 3 && p->n == 2, "a new message takes the pill's place, with the other \"on\" text");
+        check(!ps.expire(1500 + kPillMs - 1) && ps.find("AcidCatFish", 1500 + kPillMs - 1), "it lasts kPillMs");
+        check(!ps.find("AcidCatFish", 1500 + kPillMs) && ps.expire(1500 + kPillMs) && ps.by_name.empty(), "then it's gone");
+        ps.show("", 1, 1000);
+        check(ps.by_name.empty(), "no gamertag: no pill");
+    }
+
+    // the name tag page: the pill goes in once, after the row of icons, and only into the page expected
+    {
+        const std::string page = "<Page><Page.Resources><local:StringVisConverter x:Key=\"A_Converter_StringToVis\" /></Page.Resources>"
+                                 "<Grid><StackPanel><local:FZMaterial x:Name=\"HVTIcon\" /></StackPanel></Grid></Page>";
+        std::string why;
+        const std::string pop = with_pill(page, true, &why), plain = with_pill(page, false, &why);
+        auto count = [](const std::string& s, const char* what) {
+            size_t n = 0;
+            for (size_t at = s.find(what); at != std::string::npos; at = s.find(what, at + 1)) ++n;
+            return n;
+        };
+        check(count(pop, "{Binding FH2Mod_Text_QuickChat_Pill}") == 1 && count(pop, "{Binding FH2Mod_Text_QuickChat_PillOn}") == 2,
+              "the popping pill: one text, and a trigger for each \"on\" text");
+        check(pop.find("QuickChat_ControlTemplate_Pill\"") < pop.find("</Page.Resources>") &&
+                  pop.find("<Control Template=") > pop.find("</StackPanel>") && pop.find("<Control Template=") < pop.find("</Grid></Page>"),
+              "its template is in the resources, its place after the row of icons");
+        check(count(plain, "FH2Mod_Text_QuickChat_Pill") == 2 && count(plain, "PillOn") == 0 && count(plain, "Storyboard") == 0,
+              "the plain pill: shown while it has a text, nothing animated");
+        check(with_pill(pop, true, &why).empty() && why == "it already has the pill", "a page that has the pill isn't given another");
+        check(with_pill("<Page></Page>", true, &why).empty() && !why.empty(), "a page that isn't the name tag page is refused, with why");
+    }
+
+    // with the game's UI.zip: its real name tag page, with the pill, for a look (written beside the zip's name given)
+    if (argc > 2) {
+        std::string zip;
+        if (FILE* f = std::fopen(argv[1], "rb")) {
+            char buf[65536];
+            for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) zip.append(buf, n);
+            std::fclose(f);
+        }
+        const std::string page = unzip_from(zip, kPillPagePath);
+        check(page.size() > 20000, "the game's name tag page comes out of UI.zip");
+        for (int pop = 0; pop < 2; ++pop) {
+            std::string why;
+            const std::string out = with_pill(page, pop != 0, &why);
+            check(!out.empty(), pop ? "the popping pill goes into the game's page" : "the plain pill goes into the game's page");
+            if (FILE* f = std::fopen((std::string(argv[2]) + (pop ? "-pop.xaml" : "-plain.xaml")).c_str(), "wb")) {
+                std::fwrite(out.data(), 1, out.size(), f);
+                std::fclose(f);
+            }
+        }
+    }
 
     std::printf("%s\n", g_failed ? "SOME CHECKS FAILED" : "all checks passed");
     return g_failed ? 1 : 0;
