@@ -446,6 +446,19 @@ void add_pill(const FH2ModApi* api) {
             "without the box over the sender's car");
         return;
     }
+    // FH2MP owns the name tag page (its developer badge), and in an FH2MP newer than 1.5.1 that page has this box too, reading the same
+    // texts: only one mod can replace a game file, and FH2MP loads first. So with FH2MP here only the texts are added.
+    if (GetModuleHandleW(L"FH2MP.dll")) {
+        if (!api->add_page_text(g_mod, kPillText, &pill_text, nullptr) || !api->add_page_text(g_mod, kPillOn, &pill_text, &g_pill_page)) {
+            log("no box over cars: the platform refused its texts (the line above says why)");
+            return;
+        }
+        g_pill_page = true;
+        log("FH2MP has the name tag page, so a message shows as a box over its sender's car in FH2MP's page (an FH2MP newer than 1.5.1; "
+            "newer; an older FH2MP has no box, and messages only show in the chat log). FH2MP shows no box on a Drivatar's tag" +
+            std::string(g_pill_test ? ", so PillTest's offline phrases don't show" : ""));
+        return;
+    }
     const std::wstring zip = std::wstring(api->game_dir ? api->game_dir : L"") + L"\\media\\UI.zip";
     std::string why;
     const std::string page = with_pill(unzip_from(read_file(zip), kPillPagePath), g_pill_pop, &why);

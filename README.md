@@ -30,7 +30,7 @@ Only in `QuickChat.ini`, both read when the game starts:
 | `PillPop` | 1: the box pops up and fades away. 0: it simply appears and goes. Try 0 if the box never shows. |
 | `PillTest` | 1: for trying the box offline. Every 5 seconds a Drivatar near you "says" a phrase, one car after another, and the chat log names it. |
 
-The box is the game's own name tag page (`UI.zip`, `Scenes/Anthem/AR_OpponentLabel.xaml`) with a box added, so another mod that replaces that page can't be used together with it.
+The box is the game's own name tag page (`UI.zip`, `Scenes/Anthem/AR_OpponentLabel.xaml`) with a box added, so another mod that replaces that page can't be used together with it. FH2MP replaces that page too (for its developer badge), and in an FH2MP newer than 1.5.1 its page has this box as well, so with FH2MP installed QuickChat leaves the page to FH2MP. FH2MP shows no box on a Drivatar's tag, since online a Drivatar carries a real player's name; so with FH2MP installed, `PillTest`'s offline phrases don't show.
 
 ## Phrases
 
