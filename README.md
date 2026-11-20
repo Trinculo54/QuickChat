@@ -4,6 +4,14 @@ Quick chat for Forza Horizon 2 online: pick a short phrase from **ANNA's menu** 
 
 A mod for the [FH2 Mod Platform](https://github.com/Trinculo54/fh2-mod-platform), with [FH2 ANNA](https://github.com/qiangqiang101/FH2-ANNA) for its menu. Work in progress: it needs an online mod to carry the messages.
 
+## Installing
+
+1. Download `QuickChat-v<version>.zip` from [Releases](https://github.com/Trinculo54/QuickChat/releases).
+2. Close Azimuth, and extract the zip into your Azimuth folder (the one with `azimuth.exe`): the FH2 Mod Platform (`d3dcompiler_47.dll` and `DWrite.dll`, the same file under the two names Azimuth versions load) next to `azimuth.exe`, and `fh2-mods\QuickChat.dll`.
+3. Install [FH2 ANNA](https://github.com/qiangqiang101/FH2-ANNA) too, for the menu you send from.
+
+The zip has FH2 Mod Platform 2.9.1. QuickChat runs on 2.6.0 or newer: the chat log over the minimap needs 2.9.0, the box over a car 2.9.1. Each mod's zip ships its platform, so extract the one with the newest platform last. The MODS tab says when a newer QuickChat is out.
+
 ## Using it
 
 - **Send:** tap D-pad down to open ANNA, go to **Quick Chat**, and choose a phrase with D-pad right. ANNA closes and the phrase is sent. The ones said most come first: Hello!, Thanks!, Sorry!, Nice race!
