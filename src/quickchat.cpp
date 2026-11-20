@@ -569,7 +569,8 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     info.name             = "QuickChat";
     info.version          = QC_VERSION;
     info.platform_version = "2.6.0";   // what it needs: instruction hooks. The HUD feed (2.9.0) is used when it's there
-    info.check_updates    = 0;   // no GitHub releases yet
+    info.github_repo      = "Trinculo54/QuickChat";
+    info.check_updates    = 1;   // the MODS tab says when a newer release is out
     if (api->api_version >= 6) info.description = "Quick phrases for the other players online, from a Quick Chat list in ANNA's menu.";
     g_mod = api->register_mod(&info);
     if (!g_mod) return 0;
