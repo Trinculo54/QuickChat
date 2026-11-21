@@ -126,7 +126,9 @@ inline std::string clean_name(const char* name) {
 // A message also shows as a box over its sender's car, on the name tag that carries their gamertag. The tag is
 // found by that gamertag: it's what the online mod gives with a message, and what the tag itself shows.
 
-constexpr uint64_t kPillMs = 2600;   // the box's animation takes 2.42 s (pill_page.hpp); then the tag's text goes
+// The box's animation takes 2.42 s (pill_page.hpp), but it starts when the tag reads the text, which for a car coming into view is
+// after the message came: the text stays long enough that such a box still floats and fades with it, not empty.
+constexpr uint64_t kPillMs = 6000;
 
 // A gamertag as the boxes are keyed: the pop-up's cleaning, in lower case. Empty for no gamertag (never matched).
 inline std::string name_key(const std::string& name) {
